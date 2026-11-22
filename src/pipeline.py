@@ -4,6 +4,8 @@ input -> claim extraction -> web retrieval -> TF-IDF evidence ranking
       -> Groq RAG verdict per claim -> aggregation -> SQLite history
 """
 from __future__ import annotations
+from .topic import detect_topic
+from .preprocessing import preprocess_text
 
 from datetime import datetime, timezone
 from typing import Callable
@@ -15,6 +17,7 @@ from .errors import ConfigError, FakeNewsError, InputError, RetrievalError
 from .models import (CONTRADICTED, INSUFFICIENT, SUPPORTED, AnalysisResult, ClaimResult)
 from .retriever import fetch_page_text, retrieve_documents
 from .similarity import rank_passages
+from .topic import detect_topic
 from .utils import clean_text, is_url, truncate
 from .verdict import call_groq, judge_claim
 
@@ -42,6 +45,14 @@ def aggregate(results: list[ClaimResult]) -> tuple[str, float, str]:
     return overall, confidence, summary
 
 
+def _detect_topic(text: str) -> dict | None:
+    """Topic detection is informational: a failure here must never block fact-checking."""
+    try:
+        return detect_topic(text)
+    except Exception:
+        return None
+
+
 def analyze(text: str, settings: Settings, progress: ProgressFn | None = None,
             search_fn=retrieve_documents, llm_fn=call_groq, save: bool = True,
             user_id: int | None = None) -> AnalysisResult:
@@ -64,6 +75,11 @@ def analyze(text: str, settings: Settings, progress: ProgressFn | None = None,
             raise InputError("Could not read any article text from that URL.")
         text = page_text
     text = truncate(text, MAX_INPUT_CHARS)
+
+    # Run NLP preprocessing and store its outputs
+    preprocessing_result = preprocess_text(text)
+
+    topic = _detect_topic(text) # text, URL (already downloaded) and image (OCR) inputs all end up here
 
     report(0.08, "Extracting check-worthy claims...")
     claims = extract_claims(text, settings.max_claims)
@@ -96,7 +112,12 @@ def analyze(text: str, settings: Settings, progress: ProgressFn | None = None,
     result = AnalysisResult(
         input_text=text, claim_results=results, overall_verdict=overall,
         overall_confidence=confidence, summary=summary,
-        created_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"))
+        created_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        category=topic["label"] if topic else None, 
+        topic=topic,
+        preprocessing=preprocessing_result
+    )
+    print("PREPROCESSING OUTPUT:", result.preprocessing)
     if save:
         try:
             result.id = database.save_analysis(

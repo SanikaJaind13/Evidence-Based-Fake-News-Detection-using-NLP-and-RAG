@@ -80,26 +80,63 @@ def rank_passages(claim: str, documents: list[Document], top_k: int = 6) -> list
         return []
     cosines = cosine_similarity(matrix[0:1], matrix[1:])[0]
 
+    
     terms = key_terms(claim)
     scored = []
+
     for (doc, text), cos in zip(candidates, cosines):
+
+        cosine_score = float(cos)
+
         if terms:
-            score = COSINE_WEIGHT * cos + KEYTERM_WEIGHT * _coverage(terms, text)
+            coverage_score = _coverage(terms, text)
+
+            hybrid_score = (
+                COSINE_WEIGHT * cosine_score
+                + KEYTERM_WEIGHT * coverage_score
+            )
         else:
-            score = float(cos)
-        scored.append((float(score), doc, text))
+            coverage_score = 0.0
+            hybrid_score = cosine_score
+
+        scored.append((
+            float(hybrid_score),
+            cosine_score,
+            float(coverage_score),
+            doc,
+            text
+        ))
+
     scored.sort(key=lambda t: t[0], reverse=True)
 
+        
     per_doc: dict[str, int] = {}
     passages: list[Passage] = []
-    for score, doc, text in scored:
+
+    for score, cosine_score, coverage_score, doc, text in scored:
+
         if score < MIN_SCORE or len(passages) >= top_k:
             break
+
         if per_doc.get(doc.url, 0) >= MAX_PASSAGES_PER_DOC:
-            continue  # keep evidence diverse across sources
+            continue
+
         per_doc[doc.url] = per_doc.get(doc.url, 0) + 1
+
         passages.append(Passage(
-            eid=f"E{len(passages) + 1}", text=text, url=doc.url, title=doc.title,
-            domain=doc.domain, similarity=round(score, 3),
-            credibility=doc.credibility, credibility_label=doc.credibility_label))
+            eid=f"E{len(passages) + 1}",
+            text=text,
+            url=doc.url,
+            title=doc.title,
+            domain=doc.domain,
+            similarity=round(score, 3),
+            credibility=doc.credibility,
+            credibility_label=doc.credibility_label,
+            published_date=doc.published_date,
+            source_name=doc.source_name,
+            cosine_similarity=round(cosine_score, 3),
+            keyterm_coverage=round(coverage_score, 3)
+        ))
+
     return passages
+

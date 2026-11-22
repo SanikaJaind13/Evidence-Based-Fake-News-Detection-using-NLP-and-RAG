@@ -42,6 +42,8 @@ class Passage:
     credibility_label: str
     published_date: str | None = None
     source_name: str = ""
+    cosine_similarity: float = 0.0
+    keyterm_coverage: float = 0.0
 
 
 @dataclass
@@ -72,6 +74,7 @@ class AnalysisResult:
     language: str | None = None     # en | hi | mr
     sentiment: str | None = None    # positive | negative | neutral
     category: str | None = None
-
+    topic: dict | None = None       # detected topic: label, confidence, alternatives, note
+    preprocessing: dict | None = None
     def to_dict(self) -> dict:
         return asdict(self)
