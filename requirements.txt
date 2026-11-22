@@ -9,5 +9,6 @@ pytest>=8.0,<9.0
 Pillow>=10.0,<14.0            # Phase 3: image upload handling
 pytesseract>=0.3.10,<1.0      # Phase 3: OCR (also needs the Tesseract program, see setup_mac.sh)
 vaderSentiment>=3.3.2,<4.0    # Phase 2: English sentiment (lexicon is bundled, no download)
+numpy==1.26.4
 spacy==3.8.0
 https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
