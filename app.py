@@ -19,6 +19,7 @@ from src.errors import ConfigError, FakeNewsError, InputError
 from src.models import CONTRADICTED, INSUFFICIENT, SUPPORTED
 from src.pipeline import analyze
 from src.personalized_news import NEWS_CATEGORIES, clean_snippet, fetch_personalized_news
+from src.topic_modeling import run_topic_modeling
 
 st.set_page_config(page_title="Evidence-Based Fake News Detection", page_icon="🔍", layout="wide")
 
@@ -1030,6 +1031,7 @@ with tab_news:
                     news_results = fetch_personalized_news(selected_topic, settings)
                     st.session_state["personalized_news_results"] = news_results
                     st.session_state["personalized_news_topic"] = selected_topic
+                    st.session_state.pop("topic_modeling_result", None)
                 except (InputError, ConfigError) as e:
                     st.warning(str(e))
                 except FakeNewsError as e:
@@ -1047,6 +1049,47 @@ with tab_news:
         if not news_results:
             st.info("No news articles found. Try another topic.")
         else:
+            if st.button("🧩 Topic Modeling", key="run_topic_modeling"):
+                with st.spinner("Discovering topics..."):
+                    try:
+                        st.session_state["topic_modeling_result"] = run_topic_modeling(news_results)
+                    except Exception as e:
+                        st.session_state["topic_modeling_result"] = {
+                            "status": "error",
+                            "message": f"Topic modeling could not be completed: {e}",
+                        }
+
+            tm = st.session_state.get("topic_modeling_result")
+            if tm:
+                with st.expander("Topic Modeling Results (NMF)", expanded=True):
+                    if tm["status"] in ("empty", "insufficient"):
+                        st.info(tm["message"])
+                    elif tm["status"] != "ok":
+                        st.warning(tm["message"])
+                    else:
+                        st.markdown(f"**{tm['n_topics']} topics discovered across {tm['n_articles']} articles**")
+
+                        st.markdown("**Topic Distribution**")
+                        st.bar_chart(
+                            {d["label"]: d["article_count"] for d in tm["distribution"]},
+                            horizontal=True,
+                        )
+
+                        for tp in tm["topics"]:
+                            n = tp["article_count"]
+                            with st.expander(f'{tp["label"]}  ({n} article{"" if n == 1 else "s"}, {tp["share"]:.0%})'):
+                                st.markdown("**Keywords:** " + ", ".join(k["term"] for k in tp["keywords"]))
+                                if tp["articles"]:
+                                    for a in tp["articles"]:
+                                        st.markdown(f"- [{a['title']}]({a['url']})" if a["url"] else f"- {a['title']}")
+                                else:
+                                    st.caption("No articles were grouped under this topic.")
+
+                        if tm["unassigned"]:
+                            st.caption("No clear topic: " + "; ".join(a["title"] for a in tm["unassigned"]))
+                        if tm["skipped"]:
+                            st.caption(f'{len(tm["skipped"])} article(s) skipped because they had too little text.')
+
             for article in news_results:
                 with st.container(border=True):
                     # Headline
